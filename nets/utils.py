@@ -51,9 +51,23 @@ class ConvLayer(nn.Module):
         self.activation = nn.LeakyReLU(0.2) if activation else nn.Identity()
 
     def forward(self, x, **kwargs):
+        if type(x) == torch.Tensor:
+            x = (x, torch.Tensor([]))
+        x, incoming_noise = x
+        if not incoming_noise.shape == torch.Size([0]):
+            noises = [torch.flatten(incoming_noise, start_dim=1)]
+        else:
+            noises = []
         for module in self.layers:
             x = module(x, **kwargs)
-        return self.activation(x)
+            if type(x)==tuple and len(x)>1:
+                x, noise = x
+                noises.append(torch.flatten(noise,start_dim=1))
+        if noises:
+            noises = torch.cat(noises, dim=1)
+        else:
+            noises = torch.Tensor([])
+        return self.activation(x), noises
 
 
 class ToRGB(nn.Module):
@@ -71,24 +85,25 @@ class ToRGB(nn.Module):
 
     def forward(self, x, skip):
         out = self.conv(x)
+        net_output = out[0]
         if skip is not None:
-            skip = self.upsample(skip)
-            out = out + skip
-        return out
+            skip = self.upsample(skip[0])
+            net_output = net_output + skip
+        return (net_output, out[1])
 
 
 class NoiseInjectionCat(nn.Module):
     def forward(self, x, noise_std):
         batch, _, height, width = x.shape
         noise = x.new_empty(batch, 1, height, width).normal_() * noise_std
-        return torch.cat((x, noise), dim=1)
+        return torch.cat((x, noise), dim=1), noise
 
 
 class NoiseInjectionCatNormalized(nn.Module):
     def forward(self, x, noise_std):
         batch, _, height, width = x.shape
         noise = F.normalize(x.new_empty(batch, 1, height, width).normal_(), p=2, dim=(2, 3)) * noise_std
-        return torch.cat((x, noise), dim=1)
+        return torch.cat((x, noise), dim=1), noise
 
 
 class NoiseInjectionShared(nn.Module):
@@ -99,7 +114,7 @@ class NoiseInjectionShared(nn.Module):
     def forward(self, x, noise_std):
         batch, _, height, width = x.shape
         noise = x.new_empty(batch, 1, height, width).normal_() * noise_std
-        return x + self.weight * noise
+        return x + self.weight * noise, noise
 
 
 class NoiseInjectionPerChannel(nn.Module):
@@ -110,7 +125,7 @@ class NoiseInjectionPerChannel(nn.Module):
     def forward(self, x, noise_std):
         batch, _, height, width = x.shape
         noise = x.new_empty(batch, 1, height, width).normal_() * noise_std
-        return x + self.weight * noise
+        return x + self.weight * noise, noise
 
 
 noise_inject_factory = {
@@ -149,10 +164,10 @@ class DoubleConv(nn.Module):
     def forward(self, x, mid_input, **kwargs):
         x = self.conv1(x, **kwargs)
         if mid_input is not None:
-            x = torch.cat((x, mid_input), dim=1)
+            out = torch.cat((x[0], mid_input), dim=1)
+            x = (out, x[1])
         x = self.conv2(x, **kwargs)
         return x
-
 
 class ConvBlock(nn.Sequential):
     def __init__(self, in_channels, out_channels, num_layers, norm_type):
@@ -173,8 +188,7 @@ class ResBlock(nn.Module):
         out = self.conv1(x)
         out = self.conv2(out)
         skip = self.skip(x)
-        out = (out + skip) / math.sqrt(2)
-        return out
+        return out[0]+skip /math.sqrt(2) , out[1]
 
 
 class EqualLinear(nn.Module):

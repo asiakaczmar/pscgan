@@ -215,6 +215,10 @@ class CollageVal(Metric):
         self.add_state("images", default=[], dist_reduce_fx=None)
 
     def update(self, batch: torch.Tensor):
+        if type(batch==tuple):
+            batch=batch[0]
+        if len(batch.shape) < 4:
+            batch = torch.unsqueeze(batch, 0)
         self.images.append(batch)
 
     def compute(self):

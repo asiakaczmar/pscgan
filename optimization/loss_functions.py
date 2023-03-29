@@ -47,7 +47,7 @@ class DiscWGAN(WGANBase):
 
     def __call__(self, real, gen_input):
         fake = self.gen_forward(gen_input, fake_require_grad=False)
-        gp = self.compute_gp(real, fake, gen_input)
+        gp = self.compute_gp(real, fake[0], gen_input)
 
         d_out_fake_mean = torch.mean(self.disc(x=fake, y=gen_input))
         d_out_real_mean = torch.mean(self.disc(x=real, y=gen_input))
@@ -64,16 +64,31 @@ class GenExpectationLossWGAN(WGANBase):
         self.penalty_frequency = config['penalty_frequency']
         self.penalty_batch_size = config['penalty_batch_size']
 
+    def div_loss_pixels(self, images_first, images_second):
+        absolute_value = torch.abs(images_first - images_second)
+        return torch.mean(absolute_value, axis=[1,2,3])
+
+    def div_loss_z(self, z1, z2):
+        absolute_value = torch.abs(z1 - z2)
+        return torch.mean(absolute_value, axis=[1])
+
+    def div_loss(self, images_first, images_second, z1, z2):
+        dp = self.div_loss_pixels(images_first, images_second)
+        dz = self.div_loss_z(z1, z2)
+        return torch.mean(dp/dz)
+
     def penalty_loss(self, real, gen_input):
         num_items_to_expand = self.penalty_batch_size
         mse_input = utils.expand_4d_batch(gen_input[:num_items_to_expand], self.expansion)
-        fake = self.gen_forward(torch.cat((gen_input, mse_input), dim=0), True)
+        fake, noises = self.gen_forward(torch.cat((gen_input, mse_input), dim=0), True)
         restored_batch = utils.restore_expanded_4d_batch(fake[gen_input.shape[0]:], self.expansion).mean(0)
         mse = F.mse_loss(restored_batch, real[:num_items_to_expand])
 
         d_out_fake = self.disc(x=fake[:gen_input.shape[0]], y=gen_input)
         minmax = torch.neg(torch.mean(d_out_fake).mul_(self.minmax_reg))
-        return mse + minmax, {"avg_sample_mse": mse, "gen_minmax": minmax}
+        bs = gen_input.shape[0] 
+        d_loss = torch.neg(self.div_loss(fake[0:bs], fake[bs:2*bs], noises[0:bs], noises[bs:2*bs]))
+        return mse + minmax + d_loss, {"avg_sample_mse": mse, "gen_minmax": minmax, "div_loss": d_loss}
 
     def minmax_loss(self, gen_input):
         fake = self.gen_forward(gen_input, True)

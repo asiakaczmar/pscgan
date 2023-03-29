@@ -10,8 +10,10 @@ class EncDec(nn.Module):
         self.decoder = Decoder(config['dec_cfg'])
 
     def forward(self, y, noise_stds=0, encoder_assistance=True, **dec_kwargs):
-        outputs = self.encoder(y)
-        return self.decoder(outputs, encoder_assistance, noise_stds=noise_stds, **dec_kwargs)
+        #By initial design noises from encoder should be empty, but we might change it later.
+        outputs, noises = self.encoder(y)
+        output = self.decoder(outputs, noises, encoder_assistance, noise_stds=noise_stds, **dec_kwargs)
+        return output
 
 
 class Encoder(nn.Module):
@@ -39,13 +41,17 @@ class Encoder(nn.Module):
         self.drips = nn.Sequential(*self.drips)
 
     def forward(self, y):
+        y = (y, torch.Tensor([]))
         outputs = []
+        noises = []
         for conv_net, drip in zip(self.pipeline[:-1], self.drips):
             y = conv_net(y, mid_input=None)
-            outputs.append(drip(y))
+            o = drip(y)
+            outputs.append(o[0])
+            noises.append(o[1])
         y = self.pipeline[-1](y, mid_input=None)
         # Return inputs from lowest scale to highest scale.
-        return [y] + outputs[::-1]
+        return [y[0]] + outputs[::-1], torch.cat([y[1]] + noises[::-1], dim=1)
 
 
 class Decoder(nn.Module):
@@ -72,11 +78,12 @@ class Decoder(nn.Module):
         self.conv_blocks = nn.Sequential(*self.conv_blocks)
         self.trgbs = nn.Sequential(*self.trgbs)
 
-    def forward(self, inputs, encoder_assistance, noise_stds=1):
+    def forward(self, inputs, noise, encoder_assistance, noise_stds=1):
         if type(noise_stds) is not list:
             noise_stds = [noise_stds] * len(self.conv_blocks)
-
-        out = self.conv_blocks[0](inputs[0], mid_input=None, noise_std=noise_stds[0])
+        first_conv_block = self.conv_blocks[0]
+        first_inp = inputs[0]
+        out = first_conv_block((first_inp, noise.cuda()), mid_input=None, noise_std=noise_stds[0])
         trgb_out = self.trgbs[0](out, skip=None)
         for conv_block, trgb, residual, noise_std in zip(self.conv_blocks[1:], self.trgbs[1:], inputs[1:],
                                                          noise_stds[1:]):

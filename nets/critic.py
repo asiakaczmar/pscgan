@@ -50,9 +50,12 @@ class YPreProcessCritic(BasicCritic):
         self.in_channels[0] += 64
 
     def forward(self, x, **kwargs):
-        out = torch.cat((self.f_rgb(x), self.y_conv(kwargs['y'])), dim=1)
+        f_rgb_out = self.f_rgb(x)
+        out = torch.cat((f_rgb_out[0], self.y_conv(kwargs['y'])[0]), dim=1)
         out = self.blocks(out)
-        out = self.final_conv(out).view(x.shape[0], -1)
+        if type(x) == tuple:
+            x=x[0]
+        out = self.final_conv(out[0])[0].view(x.shape[0], -1)
         return self.linear(out)
 
 
