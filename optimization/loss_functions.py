@@ -59,6 +59,7 @@ class DiscWGAN(WGANBase):
 class GenExpectationLossWGAN(WGANBase):
     def __init__(self, config, gen, disc):
         super().__init__(config, gen, disc)
+        self.div_loss_ratio = config['div_loss'] 
         self.minmax_reg = config['minmax_reg']
         self.expansion = config['expansion']
         self.penalty_frequency = config['penalty_frequency']
@@ -81,14 +82,15 @@ class GenExpectationLossWGAN(WGANBase):
         num_items_to_expand = self.penalty_batch_size
         mse_input = utils.expand_4d_batch(gen_input[:num_items_to_expand], self.expansion)
         fake, noises = self.gen_forward(torch.cat((gen_input, mse_input), dim=0), True)
-        restored_batch = utils.restore_expanded_4d_batch(fake[gen_input.shape[0]:], self.expansion).mean(0)
+        restored_batch = utils.restore_expanded_4d_batch(fake[gen_input.shape[0]:], self.expansion)
+        restored_batch_mean = restored_batch.mean(0)
         mse = F.mse_loss(restored_batch, real[:num_items_to_expand])
 
         d_out_fake = self.disc(x=fake[:gen_input.shape[0]], y=gen_input)
         minmax = torch.neg(torch.mean(d_out_fake).mul_(self.minmax_reg))
         bs = gen_input.shape[0] 
-        d_loss = torch.neg(self.div_loss(fake[0:bs], fake[bs:2*bs], noises[0:bs], noises[bs:2*bs]))
-        return mse + minmax + d_loss, {"avg_sample_mse": mse, "gen_minmax": minmax, "div_loss": d_loss}
+        d_loss = torch.neg(self.div_loss(fake[bs:bs+num_items_to_expand], fake[bs+ num_items_to_expand:bs+ 2* num_items_to_expand], noises[bs:bs+num_items_to_expand], noises[bs+ num_items_to_expand:bs+ 2* num_items_to_expand]))
+        return mse + minmax + self.div_loss_ratio * d_loss, {"avg_sample_mse": mse, "gen_minmax": minmax, "div_loss": d_loss}
 
     def minmax_loss(self, gen_input):
         fake = self.gen_forward(gen_input, True)

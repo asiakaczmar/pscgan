@@ -188,7 +188,7 @@ class ResBlock(nn.Module):
         out = self.conv1(x)
         out = self.conv2(out)
         skip = self.skip(x)
-        return out[0]+skip /math.sqrt(2) , out[1]
+        return out[0]+skip[0] /math.sqrt(2) , out[1]
 
 
 class EqualLinear(nn.Module):
