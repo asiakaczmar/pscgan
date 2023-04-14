@@ -60,6 +60,7 @@ class GenExpectationLossWGAN(WGANBase):
     def __init__(self, config, gen, disc):
         super().__init__(config, gen, disc)
         self.div_loss_ratio = config['div_loss'] 
+        self.mse_loss_ratio = config['mse_loss']
         self.minmax_reg = config['minmax_reg']
         self.expansion = config['expansion']
         self.penalty_frequency = config['penalty_frequency']
@@ -90,7 +91,7 @@ class GenExpectationLossWGAN(WGANBase):
         minmax = torch.neg(torch.mean(d_out_fake).mul_(self.minmax_reg))
         bs = gen_input.shape[0] 
         d_loss = torch.neg(self.div_loss(fake[bs:bs+num_items_to_expand], fake[bs+ num_items_to_expand:bs+ 2* num_items_to_expand], noises[bs:bs+num_items_to_expand], noises[bs+ num_items_to_expand:bs+ 2* num_items_to_expand]))
-        return mse + minmax + self.div_loss_ratio * d_loss, {"avg_sample_mse": mse, "gen_minmax": minmax, "div_loss": d_loss}
+        return self.mse_loss_ratio * mse + minmax + self.div_loss_ratio * d_loss, {"avg_sample_mse": mse, "gen_minmax": minmax, "div_loss": d_loss}
 
     def minmax_loss(self, gen_input):
         fake = self.gen_forward(gen_input, True)

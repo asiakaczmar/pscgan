@@ -28,6 +28,7 @@ class PossibleMethods(Enum):
 
 def add_train_args(arg_parser) -> argparse.ArgumentParser:
     arg_parser.add_argument("--div_loss", "-dl", help="Diversification loss (default: 0.)", type=float, default=0.)
+    arg_parser.add_argument("--mse_loss", "-ml", help="MSE loss (default: 1.)", type=float, default=1.)
     arg_parser.add_argument("--checkpoint", type=str,
                             help="Path to a pretrained checkpoint. Training continues from this point.")
     arg_parser.add_argument("--learning_rate", "-lr", help="Learning rate (default: 1e-3).", type=float, default=1e-3)
@@ -206,6 +207,8 @@ def override_config(arg_parser, params, test_flag):
             config['training_method_cfg']['gen_cfg']['loss_cfg']['expansion'] = params.expansion
         if params.method == PossibleMethods.pscgan and ('--div_loss' in sys.argv or '-dl' in sys.argv):
             config['training_method_cfg']['gen_cfg']['loss_cfg']['div_loss'] = params.div_loss
+        if params.method == PossibleMethods.pscgan and ('--mse_loss' in sys.argv or '-ml' in sys.argv):
+            config['training_method_cfg']['gen_cfg']['loss_cfg']['mse_loss'] = params.mse_loss
         if params.method == PossibleMethods.pscgan and ('--penalty_batch_size' in sys.argv or '-PB' in sys.argv):
             config['training_method_cfg']['gen_cfg']['loss_cfg']['penalty_batch_size'] = params.penalty_batch_size
 
